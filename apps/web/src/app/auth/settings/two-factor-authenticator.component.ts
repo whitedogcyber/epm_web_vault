@@ -189,11 +189,11 @@ export class TwoFactorAuthenticatorComponent
     new window.QRious({
       element: document.getElementById("qr"),
       value:
-        "otpauth://totp/OIDCWarden:" +
+        "otpauth://totp/EPM:" +
         Utils.encodeRFC3986URIComponent(email) +
         "?secret=" +
         encodeURIComponent(this.key) +
-        "&issuer=OIDCWarden",
+        "&issuer=EPM",
       size: 160,
     });
   }

@@ -53,7 +53,7 @@ export class RouterService {
       .subscribe((event: NavigationEnd) => {
         this.currentUrl = event.url;
 
-        let title = "OIDCWarden Web";
+        let title = "EPM Web";
 
         if (this.currentUrl.includes("/sm/")) {
           title = i18nService.t("bitSecretsManager");
