@@ -46,7 +46,7 @@ export class WebEnvironmentService extends DefaultEnvironmentService {
     // - `https://vault.example.com/base/path/?queryParam=...`
     //
     // We want to get to just `https://vault.example.com/base/path`.
-    let baseUrl = this.win.location.href;
+    const baseUrl = this.win.location.href;
     envUrls.base ??= baseUrl.replace(/(\/+|\/*#.*|\/*\?.*)$/, ""); // Strip off trailing `/`, `#`, `?` and everything after.
 
     // Find the region
