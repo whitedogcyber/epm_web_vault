@@ -1,3 +1,5 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import { inject, Injectable, NgZone } from "@angular/core";
 import {
   BehaviorSubject,
@@ -6,7 +8,6 @@ import {
   distinctUntilChanged,
   distinctUntilKeyChanged,
   filter,
-  from,
   map,
   merge,
   MonoTypeOperatorFunction,
@@ -20,13 +21,14 @@ import {
   withLatestFrom,
 } from "rxjs";
 
+import { CollectionService } from "@bitwarden/admin-console/common";
 import { SearchService } from "@bitwarden/common/abstractions/search.service";
 import { OrganizationService } from "@bitwarden/common/admin-console/abstractions/organization/organization.service.abstraction";
+import { AccountService } from "@bitwarden/common/auth/abstractions/account.service";
 import { Utils } from "@bitwarden/common/platform/misc/utils";
 import { SyncService } from "@bitwarden/common/platform/sync";
 import { CollectionId, OrganizationId } from "@bitwarden/common/types/guid";
 import { CipherService } from "@bitwarden/common/vault/abstractions/cipher.service";
-import { CollectionService } from "@bitwarden/common/vault/abstractions/collection.service";
 import { VaultSettingsService } from "@bitwarden/common/vault/abstractions/vault-settings/vault-settings.service";
 import { CipherType } from "@bitwarden/common/vault/enums";
 import { CipherView } from "@bitwarden/common/vault/models/view/cipher.view";
@@ -55,6 +57,9 @@ export class VaultPopupItemsService {
 
   latestSearchText$: Observable<string> = this._searchText$.asObservable();
 
+  private organizations$ = this.accountService.activeAccount$.pipe(
+    switchMap((account) => this.organizationService.organizations$(account?.id)),
+  );
   /**
    * Observable that contains the list of other cipher types that should be shown
    * in the autofill section of the Vault tab. Depends on vault settings.
@@ -63,8 +68,13 @@ export class VaultPopupItemsService {
   private _otherAutoFillTypes$: Observable<CipherType[]> = combineLatest([
     this.vaultSettingsService.showCardsCurrentTab$,
     this.vaultSettingsService.showIdentitiesCurrentTab$,
+    this.vaultPopupAutofillService.nonLoginCipherTypesOnPage$,
   ]).pipe(
-    map(([showCards, showIdentities]) => {
+    map(([showCardsSettingEnabled, showIdentitiesSettingEnabled, nonLoginCipherTypesOnPage]) => {
+      const showCards = showCardsSettingEnabled || nonLoginCipherTypesOnPage[CipherType.Card];
+      const showIdentities =
+        showIdentitiesSettingEnabled || nonLoginCipherTypesOnPage[CipherType.Identity];
+
       return [
         ...(showCards ? [CipherType.Card] : []),
         ...(showIdentities ? [CipherType.Identity] : []),
@@ -76,7 +86,7 @@ export class VaultPopupItemsService {
    * Observable that contains the list of all decrypted ciphers.
    * @private
    */
-  private _cipherList$: Observable<PopupCipherView[]> = merge(
+  private _allDecryptedCiphers$: Observable<CipherView[]> = merge(
     this.cipherService.ciphers$,
     this.cipherService.localData$,
   ).pipe(
@@ -84,11 +94,14 @@ export class VaultPopupItemsService {
     tap(() => this._ciphersLoading$.next()),
     waitUntilSync(this.syncService),
     switchMap(() => Utils.asyncToObservable(() => this.cipherService.getAllDecrypted())),
+    withLatestFrom(this.cipherService.failedToDecryptCiphers$),
+    map(([ciphers, failedToDecryptCiphers]) => [...failedToDecryptCiphers, ...ciphers]),
+    shareReplay({ refCount: true, bufferSize: 1 }),
+  );
+
+  private _activeCipherList$: Observable<PopupCipherView[]> = this._allDecryptedCiphers$.pipe(
     switchMap((ciphers) =>
-      combineLatest([
-        this.organizationService.organizations$,
-        this.collectionService.decryptedCollections$,
-      ]).pipe(
+      combineLatest([this.organizations$, this.collectionService.decryptedCollections$]).pipe(
         map(([organizations, collections]) => {
           const orgMap = Object.fromEntries(organizations.map((org) => [org.id, org]));
           const collectionMap = Object.fromEntries(collections.map((col) => [col.id, col]));
@@ -105,11 +118,18 @@ export class VaultPopupItemsService {
         }),
       ),
     ),
-    shareReplay({ refCount: true, bufferSize: 1 }),
+  );
+
+  /**
+   * Observable that indicates whether there is search text present that is searchable.
+   * @private
+   */
+  private _hasSearchText$ = this._searchText$.pipe(
+    switchMap((searchText) => this.searchService.isSearchable(searchText)),
   );
 
   private _filteredCipherList$: Observable<PopupCipherView[]> = combineLatest([
-    this._cipherList$,
+    this._activeCipherList$,
     this._searchText$,
     this.vaultPopupListFiltersService.filterFunction$,
   ]).pipe(
@@ -147,15 +167,12 @@ export class VaultPopupItemsService {
 
   /**
    * List of favorite ciphers that are not currently suggested for autofill.
-   * Ciphers are sorted by last used date, then by name.
+   * Ciphers are sorted by name.
    */
   favoriteCiphers$: Observable<PopupCipherView[]> = this.autoFillCiphers$.pipe(
     withLatestFrom(this._filteredCipherList$),
     map(([autoFillCiphers, ciphers]) =>
       ciphers.filter((cipher) => cipher.favorite && !autoFillCiphers.includes(cipher)),
-    ),
-    map((ciphers) =>
-      ciphers.sort((a, b) => this.cipherService.sortCiphersByLastUsedThenName(a, b)),
     ),
     shareReplay({ refCount: false, bufferSize: 1 }),
   );
@@ -176,7 +193,6 @@ export class VaultPopupItemsService {
         (cipher) => !autoFillCiphers.includes(cipher) && !favoriteCiphers.includes(cipher),
       ),
     ),
-    map((ciphers) => ciphers.sort(this.cipherService.getLocaleSortingFunction())),
     shareReplay({ refCount: false, bufferSize: 1 }),
   );
 
@@ -189,26 +205,23 @@ export class VaultPopupItemsService {
   ).pipe(startWith(true), distinctUntilChanged(), shareReplay({ refCount: false, bufferSize: 1 }));
 
   /**
-   * Observable that indicates whether a filter is currently applied to the ciphers.
+   * Observable that indicates whether a filter or search text is currently applied to the ciphers.
    */
   hasFilterApplied$ = combineLatest([
-    this._searchText$,
+    this._hasSearchText$,
     this.vaultPopupListFiltersService.filters$,
   ]).pipe(
-    switchMap(([searchText, filters]) => {
-      return from(this.searchService.isSearchable(searchText)).pipe(
-        map(
-          (isSearchable) =>
-            isSearchable || Object.values(filters).some((filter) => filter !== null),
-        ),
-      );
+    map(([hasSearchText, filters]) => {
+      return hasSearchText || Object.values(filters).some((filter) => filter !== null);
     }),
   );
 
   /**
    * Observable that indicates whether the user's vault is empty.
    */
-  emptyVault$: Observable<boolean> = this._cipherList$.pipe(map((ciphers) => !ciphers.length));
+  emptyVault$: Observable<boolean> = this._activeCipherList$.pipe(
+    map((ciphers) => !ciphers.length),
+  );
 
   /**
    * Observable that indicates whether there are no ciphers to show with the current filter.
@@ -220,7 +233,7 @@ export class VaultPopupItemsService {
   /** Observable that indicates when the user should see the deactivated org state */
   showDeactivatedOrg$: Observable<boolean> = combineLatest([
     this.vaultPopupListFiltersService.filters$.pipe(distinctUntilKeyChanged("organization")),
-    this.organizationService.organizations$,
+    this.organizations$,
   ]).pipe(
     map(([filters, orgs]) => {
       if (!filters.organization || filters.organization.id === MY_VAULT_ID) {
@@ -232,6 +245,31 @@ export class VaultPopupItemsService {
     }),
   );
 
+  /**
+   * Observable that contains the list of ciphers that have been deleted.
+   */
+  deletedCiphers$: Observable<PopupCipherView[]> = this._allDecryptedCiphers$.pipe(
+    switchMap((ciphers) =>
+      combineLatest([this.organizations$, this.collectionService.decryptedCollections$]).pipe(
+        map(([organizations, collections]) => {
+          const orgMap = Object.fromEntries(organizations.map((org) => [org.id, org]));
+          const collectionMap = Object.fromEntries(collections.map((col) => [col.id, col]));
+          return ciphers
+            .filter((c) => c.isDeleted)
+            .map(
+              (cipher) =>
+                new PopupCipherView(
+                  cipher,
+                  cipher.collectionIds?.map((colId) => collectionMap[colId as CollectionId]),
+                  orgMap[cipher.organizationId as OrganizationId],
+                ),
+            );
+        }),
+      ),
+    ),
+    shareReplay({ refCount: false, bufferSize: 1 }),
+  );
+
   constructor(
     private cipherService: CipherService,
     private vaultSettingsService: VaultSettingsService,
@@ -241,6 +279,7 @@ export class VaultPopupItemsService {
     private collectionService: CollectionService,
     private vaultPopupAutofillService: VaultPopupAutofillService,
     private syncService: SyncService,
+    private accountService: AccountService,
   ) {}
 
   applyFilter(newSearchText: string) {
@@ -258,6 +297,7 @@ export class VaultPopupItemsService {
       [CipherType.Card]: 2,
       [CipherType.Identity]: 3,
       [CipherType.SecureNote]: 4,
+      [CipherType.SshKey]: 5,
     };
 
     // Compare types first

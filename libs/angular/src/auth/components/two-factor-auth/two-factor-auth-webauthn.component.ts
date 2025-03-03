@@ -1,3 +1,5 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import { DialogModule } from "@angular/cdk/dialog";
 import { CommonModule } from "@angular/common";
 import { Component, EventEmitter, Inject, OnDestroy, OnInit, Output } from "@angular/core";
@@ -21,6 +23,7 @@ import {
   TypographyModule,
   FormFieldModule,
   AsyncActionsModule,
+  ToastService,
 } from "@bitwarden/components";
 
 @Component({
@@ -56,6 +59,7 @@ export class TwoFactorAuthWebAuthnComponent implements OnInit, OnDestroy {
     protected environmentService: EnvironmentService,
     protected twoFactorService: TwoFactorService,
     protected route: ActivatedRoute,
+    private toastService: ToastService,
   ) {
     this.webAuthnSupported = this.platformUtilsService.supportsWebAuthn(win);
 
@@ -85,11 +89,11 @@ export class TwoFactorAuthWebAuthnComponent implements OnInit, OnDestroy {
           this.token.emit(token);
         },
         (error: string) => {
-          this.platformUtilsService.showToast(
-            "error",
-            this.i18nService.t("errorOccurred"),
-            this.i18nService.t("webauthnCancelOrTimeout"),
-          );
+          this.toastService.showToast({
+            variant: "error",
+            title: this.i18nService.t("errorOccurred"),
+            message: this.i18nService.t("webauthnCancelOrTimeout"),
+          });
         },
         (info: string) => {
           if (info === "ready") {

@@ -1,11 +1,19 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import { Component, EventEmitter, Input, OnDestroy, OnInit, Output } from "@angular/core";
 import { FormBuilder, Validators } from "@angular/forms";
-import { Subject, takeUntil } from "rxjs";
+import { Subject, firstValueFrom, takeUntil } from "rxjs";
 
 import { OrganizationApiServiceAbstraction } from "@bitwarden/common/admin-console/abstractions/organization/organization-api.service.abstraction";
+import {
+  getOrganizationById,
+  InternalOrganizationServiceAbstraction,
+} from "@bitwarden/common/admin-console/abstractions/organization/organization.service.abstraction";
+import { OrganizationData } from "@bitwarden/common/admin-console/models/data/organization.data";
+import { AccountService } from "@bitwarden/common/auth/abstractions/account.service";
+import { getUserId } from "@bitwarden/common/auth/services/account.service";
 import { OrganizationSubscriptionUpdateRequest } from "@bitwarden/common/billing/models/request/organization-subscription-update.request";
 import { I18nService } from "@bitwarden/common/platform/abstractions/i18n.service";
-import { PlatformUtilsService } from "@bitwarden/common/platform/abstractions/platform-utils.service";
 import { ToastService } from "@bitwarden/components";
 
 @Component({
@@ -19,6 +27,7 @@ export class AdjustSubscription implements OnInit, OnDestroy {
   @Input() seatPrice = 0;
   @Input() interval = "year";
   @Output() onAdjusted = new EventEmitter();
+
   private destroy$ = new Subject<void>();
 
   adjustSubscriptionForm = this.formBuilder.group({
@@ -26,47 +35,35 @@ export class AdjustSubscription implements OnInit, OnDestroy {
     limitSubscription: [false],
     newMaxSeats: [0, [Validators.min(0)]],
   });
-  get limitSubscription(): boolean {
-    return this.adjustSubscriptionForm.value.limitSubscription;
-  }
+
   constructor(
     private i18nService: I18nService,
-    private platformUtilsService: PlatformUtilsService,
     private organizationApiService: OrganizationApiServiceAbstraction,
     private formBuilder: FormBuilder,
     private toastService: ToastService,
+    private internalOrganizationService: InternalOrganizationServiceAbstraction,
+    private accountService: AccountService,
   ) {}
 
   ngOnInit() {
+    this.adjustSubscriptionForm.valueChanges.pipe(takeUntil(this.destroy$)).subscribe((value) => {
+      const maxAutoscaleSeatsControl = this.adjustSubscriptionForm.controls.newMaxSeats;
+
+      if (value.limitSubscription) {
+        maxAutoscaleSeatsControl.setValidators([Validators.min(value.newSeatCount)]);
+        maxAutoscaleSeatsControl.enable({ emitEvent: false });
+      } else {
+        maxAutoscaleSeatsControl.disable({ emitEvent: false });
+      }
+    });
+
     this.adjustSubscriptionForm.patchValue({
       newSeatCount: this.currentSeatCount,
-      limitSubscription: this.maxAutoscaleSeats != null,
       newMaxSeats: this.maxAutoscaleSeats,
+      limitSubscription: this.maxAutoscaleSeats != null,
     });
-    this.adjustSubscriptionForm
-      .get("limitSubscription")
-      .valueChanges.pipe(takeUntil(this.destroy$))
-      .subscribe((value: boolean) => {
-        if (value) {
-          this.adjustSubscriptionForm
-            .get("newMaxSeats")
-            .addValidators([
-              Validators.min(
-                this.adjustSubscriptionForm.value.newSeatCount == null
-                  ? 1
-                  : this.adjustSubscriptionForm.value.newSeatCount,
-              ),
-              Validators.required,
-            ]);
-        }
-        this.adjustSubscriptionForm.get("newMaxSeats").updateValueAndValidity();
-      });
   }
 
-  ngOnDestroy() {
-    this.destroy$.next();
-    this.destroy$.complete();
-  }
   submit = async () => {
     this.adjustSubscriptionForm.markAllAsTouched();
     if (this.adjustSubscriptionForm.invalid) {
@@ -76,7 +73,25 @@ export class AdjustSubscription implements OnInit, OnDestroy {
       this.additionalSeatCount,
       this.adjustSubscriptionForm.value.newMaxSeats,
     );
-    await this.organizationApiService.updatePasswordManagerSeats(this.organizationId, request);
+
+    const response = await this.organizationApiService.updatePasswordManagerSeats(
+      this.organizationId,
+      request,
+    );
+
+    const userId = await firstValueFrom(getUserId(this.accountService.activeAccount$));
+    const organization = await firstValueFrom(
+      this.internalOrganizationService
+        .organizations$(userId)
+        .pipe(getOrganizationById(this.organizationId)),
+    );
+
+    const organizationData = new OrganizationData(response, {
+      isMember: organization.isMember,
+      isProviderUser: organization.isProviderUser,
+    });
+
+    await this.internalOrganizationService.upsert(organizationData, userId);
 
     this.toastService.showToast({
       variant: "success",
@@ -99,18 +114,20 @@ export class AdjustSubscription implements OnInit, OnDestroy {
       : 0;
   }
 
-  get additionalMaxSeatCount(): number {
-    return this.adjustSubscriptionForm.value.newMaxSeats
-      ? this.adjustSubscriptionForm.value.newMaxSeats - this.currentSeatCount
-      : 0;
-  }
-
   get maxSeatTotal(): number {
     return Math.abs((this.adjustSubscriptionForm.value.newMaxSeats ?? 0) * this.seatPrice);
   }
 
   get seatTotalCost(): number {
-    const totalSeat = Math.abs(this.adjustSubscriptionForm.value.newSeatCount * this.seatPrice);
-    return totalSeat;
+    return Math.abs(this.adjustSubscriptionForm.value.newSeatCount * this.seatPrice);
+  }
+
+  get limitSubscription(): boolean {
+    return this.adjustSubscriptionForm.value.limitSubscription;
+  }
+
+  ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 }

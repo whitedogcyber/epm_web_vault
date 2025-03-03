@@ -1,3 +1,5 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import { CommonModule } from "@angular/common";
 import { Component, Inject, OnInit, ViewChild } from "@angular/core";
 import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
@@ -34,6 +36,7 @@ import {
   ButtonModule,
   DialogService,
   FormFieldModule,
+  ToastService,
 } from "@bitwarden/components";
 
 import { CaptchaProtectedComponent } from "../captcha-protected.component";
@@ -142,8 +145,9 @@ export class TwoFactorAuthComponent extends CaptchaProtectedComponent implements
     private accountService: AccountService,
     private formBuilder: FormBuilder,
     @Inject(WINDOW) protected win: Window,
+    protected toastService: ToastService,
   ) {
-    super(environmentService, i18nService, platformUtilsService);
+    super(environmentService, i18nService, platformUtilsService, toastService);
   }
 
   async ngOnInit() {
@@ -184,11 +188,11 @@ export class TwoFactorAuthComponent extends CaptchaProtectedComponent implements
     await this.setupCaptcha();
 
     if (this.token == null || this.token === "") {
-      this.platformUtilsService.showToast(
-        "error",
-        this.i18nService.t("errorOccurred"),
-        this.i18nService.t("verificationCodeRequired"),
-      );
+      this.toastService.showToast({
+        variant: "error",
+        title: this.i18nService.t("errorOccurred"),
+        message: this.i18nService.t("verificationCodeRequired"),
+      });
       return;
     }
 
@@ -202,11 +206,11 @@ export class TwoFactorAuthComponent extends CaptchaProtectedComponent implements
       await this.handleLoginResponse(authResult);
     } catch {
       this.logService.error("Error submitting two factor token");
-      this.platformUtilsService.showToast(
-        "error",
-        this.i18nService.t("errorOccurred"),
-        this.i18nService.t("invalidVerificationCode"),
-      );
+      this.toastService.showToast({
+        variant: "error",
+        title: this.i18nService.t("errorOccurred"),
+        message: this.i18nService.t("invalidVerificationCode"),
+      });
     }
   }
 

@@ -1,9 +1,14 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import { Component, OnDestroy, OnInit } from "@angular/core";
 import { ActivatedRoute } from "@angular/router";
 import { concatMap, Subject, takeUntil } from "rxjs";
 
-import { OrganizationApiServiceAbstraction } from "@bitwarden/common/admin-console/abstractions/organization/organization-api.service.abstraction";
-import { BillingHistoryResponse } from "@bitwarden/common/billing/models/response/billing-history.response";
+import { OrganizationBillingApiServiceAbstraction } from "@bitwarden/common/billing/abstractions/organizations/organization-billing-api.service.abstraction";
+import {
+  BillingInvoiceResponse,
+  BillingTransactionResponse,
+} from "@bitwarden/common/billing/models/response/billing.response";
 
 @Component({
   templateUrl: "organization-billing-history-view.component.html",
@@ -11,13 +16,16 @@ import { BillingHistoryResponse } from "@bitwarden/common/billing/models/respons
 export class OrgBillingHistoryViewComponent implements OnInit, OnDestroy {
   loading = false;
   firstLoaded = false;
-  billing: BillingHistoryResponse;
+  openInvoices: BillingInvoiceResponse[] = [];
+  paidInvoices: BillingInvoiceResponse[] = [];
+  transactions: BillingTransactionResponse[] = [];
   organizationId: string;
+  hasAdditionalHistory: boolean = false;
 
   private destroy$ = new Subject<void>();
 
   constructor(
-    private organizationApiService: OrganizationApiServiceAbstraction,
+    private organizationBillingApiService: OrganizationBillingApiServiceAbstraction,
     private route: ActivatedRoute,
   ) {}
 
@@ -43,8 +51,14 @@ export class OrgBillingHistoryViewComponent implements OnInit, OnDestroy {
     if (this.loading) {
       return;
     }
+
     this.loading = true;
-    this.billing = null;
+
+    this.openInvoices = [];
+    this.paidInvoices = [];
+    this.transactions = [];
+    this.hasAdditionalHistory = false;
+
     this.loading = false;
   }
 }

@@ -49,8 +49,8 @@
     </div>
     <div class="tw-mb-4">
       <h2 class="tw-mb-3 tw-text-base tw-font-semibold">{{ "paymentType" | i18n }}</h2>
-      <app-payment [hideCredit]="true" [trialFlow]="true"></app-payment>
-      <app-tax-info [trialFlow]="true" (onCountryChanged)="changedCountry()"></app-tax-info>
+      <app-payment [showAccountCredit]="false"></app-payment>
+      <app-tax-info [trialFlow]="true" (countryChanged)="changedCountry()"></app-tax-info>
     </div>
     <div class="tw-flex tw-space-x-2">
       <button type="submit" buttonType="primary" bitButton [loading]="form.loading">

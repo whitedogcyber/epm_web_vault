@@ -23,7 +23,7 @@ This generate three different versions :
 
 To build the web-vault you need node and npm installed.
 
-### Using node 16 and npm
+### Using node 18 and npm
 
 For a quick and easy local build you can run:
 

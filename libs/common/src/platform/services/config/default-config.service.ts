@@ -1,3 +1,5 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import {
   combineLatest,
   firstValueFrom,
@@ -28,6 +30,7 @@ import { Environment, EnvironmentService, Region } from "../../abstractions/envi
 import { LogService } from "../../abstractions/log.service";
 import { devFlagEnabled, devFlagValue } from "../../misc/flags";
 import { ServerConfigData } from "../../models/data/server-config.data";
+import { ServerSettings } from "../../models/domain/server-settings";
 import { CONFIG_DISK, KeyDefinition, StateProvider, UserKeyDefinition } from "../../state";
 
 export const RETRIEVAL_INTERVAL = devFlagEnabled("configRetrievalIntervalMs")
@@ -56,6 +59,8 @@ export class DefaultConfigService implements ConfigService {
   private failedFetchFallbackSubject = new Subject<ServerConfig>();
 
   serverConfig$: Observable<ServerConfig>;
+
+  serverSettings$: Observable<ServerSettings>;
 
   cloudRegion$: Observable<Region>;
 
@@ -111,18 +116,33 @@ export class DefaultConfigService implements ConfigService {
     this.cloudRegion$ = this.serverConfig$.pipe(
       map((config) => config?.environment?.cloudRegion ?? Region.US),
     );
+
+    this.serverSettings$ = this.serverConfig$.pipe(
+      map((config) => config?.settings ?? new ServerSettings()),
+    );
   }
 
   getFeatureFlag$<Flag extends FeatureFlag>(key: Flag) {
     return this.serverConfig$.pipe(
-      map((serverConfig) => {
-        if (serverConfig?.featureStates == null || serverConfig.featureStates[key] == null) {
-          return DefaultFeatureFlagValue[key];
-        }
-
-        return serverConfig.featureStates[key] as FeatureFlagValueType<Flag>;
-      }),
+      map((serverConfig) => this.getFeatureFlagValue(serverConfig, key)),
     );
+  }
+
+  private getFeatureFlagValue<Flag extends FeatureFlag>(
+    serverConfig: ServerConfig | null,
+    flag: Flag,
+  ) {
+    if (serverConfig?.featureStates == null || serverConfig.featureStates[flag] == null) {
+      return DefaultFeatureFlagValue[flag];
+    }
+
+    return serverConfig.featureStates[flag] as FeatureFlagValueType<Flag>;
+  }
+
+  userCachedFeatureFlag$<Flag extends FeatureFlag>(key: Flag, userId: UserId) {
+    return this.stateProvider
+      .getUser(userId, USER_SERVER_CONFIG)
+      .state$.pipe(map((config) => this.getFeatureFlagValue(config, key)));
   }
 
   async getFeatureFlag<Flag extends FeatureFlag>(key: Flag) {

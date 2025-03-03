@@ -16,4 +16,13 @@
   *ngIf="!sideNavService.open"
 ></bit-nav-item>
 
+<bit-nav-item
+  class="tw-block tw-pt-2"
+  [hideActiveStyles]="true"
+  [route]="route"
+  [icon]="'bwi-shield'"
+  [text]="label"
+  *ngIf="!sideNavService.open"
+></bit-nav-item>
+
 <bit-nav-divider></bit-nav-divider>

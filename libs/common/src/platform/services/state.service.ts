@@ -1,3 +1,5 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import { firstValueFrom, map } from "rxjs";
 import { Jsonify, JsonValue } from "type-fest";
 
@@ -117,6 +119,13 @@ export class StateService<
         state.accounts = {};
       }
       state.accounts[userId] = this.createAccount();
+
+      if (diskAccount == null) {
+        // Return early because we can't set the diskAccount.profile
+        // if diskAccount itself is null
+        return state;
+      }
+
       state.accounts[userId].profile = diskAccount.profile;
       return state;
     });

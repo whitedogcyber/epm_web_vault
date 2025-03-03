@@ -53,6 +53,7 @@ export const KEY_CONNECTOR_DISK = new StateDefinition("keyConnector", "disk");
 export const LOGIN_EMAIL_DISK = new StateDefinition("loginEmail", "disk", {
   web: "disk-local",
 });
+export const LOGIN_EMAIL_MEMORY = new StateDefinition("loginEmail", "memory");
 export const LOGIN_STRATEGY_MEMORY = new StateDefinition("loginStrategy", "memory");
 export const MASTER_PASSWORD_DISK = new StateDefinition("masterPassword", "disk");
 export const MASTER_PASSWORD_MEMORY = new StateDefinition("masterPassword", "memory");
@@ -120,6 +121,10 @@ export const TRANSLATION_DISK = new StateDefinition("translation", "disk", { web
 export const ANIMATION_DISK = new StateDefinition("animation", "disk");
 export const TASK_SCHEDULER_DISK = new StateDefinition("taskScheduler", "disk");
 
+// Design System
+
+export const POPUP_STYLE_DISK = new StateDefinition("popupStyle", "disk");
+
 // Secrets Manager
 
 export const SM_ONBOARDING_DISK = new StateDefinition("smOnboarding", "disk", {
@@ -145,6 +150,9 @@ export const COLLECTION_DATA = new StateDefinition("collection", "disk", {
   web: "memory",
 });
 export const FOLDER_DISK = new StateDefinition("folder", "disk", { web: "memory" });
+export const FOLDER_MEMORY = new StateDefinition("decryptedFolders", "memory", {
+  browser: "memory-large-object",
+});
 export const VAULT_FILTER_DISK = new StateDefinition("vaultFilter", "disk", {
   web: "disk-local",
 });
@@ -171,4 +179,12 @@ export const PREMIUM_BANNER_DISK_LOCAL = new StateDefinition("premiumBannerRepro
   web: "disk-local",
 });
 export const BANNERS_DISMISSED_DISK = new StateDefinition("bannersDismissed", "disk");
-export const VAULT_BROWSER_UI_ONBOARDING = new StateDefinition("vaultBrowserUiOnboarding", "disk");
+export const NEW_DEVICE_VERIFICATION_NOTICE = new StateDefinition(
+  "newDeviceVerificationNotice",
+  "disk",
+  {
+    web: "disk-local",
+  },
+);
+export const VAULT_APPEARANCE = new StateDefinition("vaultAppearance", "disk");
+export const SECURITY_TASKS_DISK = new StateDefinition("securityTasks", "disk");
