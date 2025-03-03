@@ -1,3 +1,5 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import { Component, OnInit } from "@angular/core";
 import { FormBuilder, Validators } from "@angular/forms";
 import { Router } from "@angular/router";
@@ -8,6 +10,7 @@ import { ApiService } from "@bitwarden/common/abstractions/api.service";
 import { I18nService } from "@bitwarden/common/platform/abstractions/i18n.service";
 import { LogService } from "@bitwarden/common/platform/abstractions/log.service";
 import { PlatformUtilsService } from "@bitwarden/common/platform/abstractions/platform-utils.service";
+import { ToastService } from "@bitwarden/components";
 
 @Component({
   selector: "app-hint",
@@ -30,12 +33,21 @@ export class HintComponent extends BaseHintComponent implements OnInit {
     logService: LogService,
     loginEmailService: LoginEmailServiceAbstraction,
     private formBuilder: FormBuilder,
+    protected toastService: ToastService,
   ) {
-    super(router, i18nService, apiService, platformUtilsService, logService, loginEmailService);
+    super(
+      router,
+      i18nService,
+      apiService,
+      platformUtilsService,
+      logService,
+      loginEmailService,
+      toastService,
+    );
   }
 
-  ngOnInit(): void {
-    super.ngOnInit();
+  async ngOnInit(): Promise<void> {
+    await super.ngOnInit();
     this.emailFormControl.setValue(this.email);
   }
 

@@ -1,3 +1,5 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import { DialogModule } from "@angular/cdk/dialog";
 import { CommonModule } from "@angular/common";
 import { Component, EventEmitter, OnInit, Output } from "@angular/core";
@@ -20,6 +22,7 @@ import {
   TypographyModule,
   FormFieldModule,
   AsyncActionsModule,
+  ToastService,
 } from "@bitwarden/components";
 
 @Component({
@@ -55,6 +58,7 @@ export class TwoFactorAuthEmailComponent implements OnInit {
     protected logService: LogService,
     protected apiService: ApiService,
     protected appIdService: AppIdService,
+    private toastService: ToastService,
   ) {}
 
   async ngOnInit(): Promise<void> {
@@ -74,11 +78,11 @@ export class TwoFactorAuthEmailComponent implements OnInit {
     }
 
     if ((await this.loginStrategyService.getEmail()) == null) {
-      this.platformUtilsService.showToast(
-        "error",
-        this.i18nService.t("errorOccurred"),
-        this.i18nService.t("sessionTimeout"),
-      );
+      this.toastService.showToast({
+        variant: "error",
+        title: this.i18nService.t("errorOccurred"),
+        message: this.i18nService.t("sessionTimeout"),
+      });
       return;
     }
 
@@ -94,11 +98,11 @@ export class TwoFactorAuthEmailComponent implements OnInit {
       this.emailPromise = this.apiService.postTwoFactorEmail(request);
       await this.emailPromise;
       if (doToast) {
-        this.platformUtilsService.showToast(
-          "success",
-          null,
-          this.i18nService.t("verificationCodeEmailSent", this.twoFactorEmail),
-        );
+        this.toastService.showToast({
+          variant: "success",
+          title: null,
+          message: this.i18nService.t("verificationCodeEmailSent", this.twoFactorEmail),
+        });
       }
     } catch (e) {
       this.logService.error(e);

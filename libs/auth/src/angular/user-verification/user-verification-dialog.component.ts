@@ -1,3 +1,5 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import { DIALOG_DATA, DialogRef } from "@angular/cdk/dialog";
 import { CommonModule } from "@angular/common";
 import { Component, Inject } from "@angular/core";
@@ -15,6 +17,7 @@ import {
   CalloutModule,
   DialogModule,
   DialogService,
+  ToastService,
 } from "@bitwarden/components";
 
 import { ActiveClientVerificationOption } from "./active-client-verification-option.enum";
@@ -58,6 +61,7 @@ export class UserVerificationDialogComponent {
     private userVerificationService: UserVerificationService,
     private platformUtilsService: PlatformUtilsService,
     private i18nService: I18nService,
+    private toastService: ToastService,
   ) {}
 
   /**
@@ -256,19 +260,27 @@ export class UserVerificationDialogComponent {
 
         // Only pin should ever get here, but added this check to be safe.
         if (this.activeClientVerificationOption === ActiveClientVerificationOption.Pin) {
-          this.platformUtilsService.showToast(
-            "error",
-            this.i18nService.t("error"),
-            this.i18nService.t("invalidPin"),
-          );
+          this.toastService.showToast({
+            variant: "error",
+            title: this.i18nService.t("error"),
+            message: this.i18nService.t("invalidPin"),
+          });
         } else {
-          this.platformUtilsService.showToast("error", null, this.i18nService.t("unexpectedError"));
+          this.toastService.showToast({
+            variant: "error",
+            title: null,
+            message: this.i18nService.t("unexpectedError"),
+          });
         }
       }
     } catch (e) {
       // Catch handles OTP and MP verification scenarios as those throw errors on verification failure instead of returning false like PIN and biometrics.
       this.invalidSecret = true;
-      this.platformUtilsService.showToast("error", this.i18nService.t("error"), e.message);
+      this.toastService.showToast({
+        variant: "error",
+        title: this.i18nService.t("error"),
+        message: e.message,
+      });
       return;
     }
   };

@@ -1,15 +1,20 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import AutofillField from "../models/autofill-field";
 import AutofillPageDetails from "../models/autofill-page-details";
-import { sendExtensionMessage } from "../utils";
+import { getSubmitButtonKeywordsSet, sendExtensionMessage } from "../utils";
 
 import {
   AutofillKeywordsMap,
   InlineMenuFieldQualificationService as InlineMenuFieldQualificationServiceInterface,
+  SubmitButtonKeywordsMap,
 } from "./abstractions/inline-menu-field-qualifications.service";
 import {
   AutoFillConstants,
   CreditCardAutoFillConstants,
   IdentityAutoFillConstants,
+  SubmitChangePasswordButtonNames,
+  SubmitLoginButtonNames,
 } from "./autofill-constants";
 
 export class InlineMenuFieldQualificationService
@@ -27,14 +32,37 @@ export class InlineMenuFieldQualificationService
     this.webAuthnAutocompleteValue,
   ]);
   private fieldIgnoreListString = AutoFillConstants.FieldIgnoreList.join(",");
-  private passwordFieldExcludeListString = AutoFillConstants.PasswordFieldExcludeList.join(",");
   private currentPasswordAutocompleteValue = "current-password";
   private newPasswordAutoCompleteValue = "new-password";
   private autofillFieldKeywordsMap: AutofillKeywordsMap = new WeakMap();
+  private submitButtonKeywordsMap: SubmitButtonKeywordsMap = new WeakMap();
   private autocompleteDisabledValues = new Set(["off", "false"]);
-  private newFieldKeywords = new Set(["new", "change", "neue", "ändern"]);
   private accountCreationFieldKeywords = [
-    ...new Set(["register", "registration", "create", "confirm", ...this.newFieldKeywords]),
+    "register",
+    "registration",
+    "create password",
+    "create a password",
+    "create an account",
+    "create account password",
+    "create user password",
+    "confirm password",
+    "confirm account password",
+    "confirm user password",
+    "new user",
+    "new email",
+    "new e-mail",
+    "new password",
+    "new-password",
+    "neuer benutzer",
+    "neues passwort",
+    "neue e-mail",
+    "pwdcheck",
+  ];
+  private updatePasswordFieldKeywords = [
+    "update password",
+    "change password",
+    "current password",
+    "kennwort ändern",
   ];
   private creditCardFieldKeywords = [
     ...new Set([
@@ -118,36 +146,24 @@ export class InlineMenuFieldQualificationService
     ...this.identityAddressAutoCompleteValues,
     ...this.identityCountryAutocompleteValues,
     ...this.identityPhoneNumberAutocompleteValues,
+    this.identityCompanyAutocompleteValue,
     this.identityPostalCodeAutocompleteValue,
   ]);
-  private identityFieldKeywords = [
-    ...new Set([
-      ...IdentityAutoFillConstants.TitleFieldNames,
-      ...IdentityAutoFillConstants.FullNameFieldNames,
-      ...IdentityAutoFillConstants.FirstnameFieldNames,
-      ...IdentityAutoFillConstants.MiddlenameFieldNames,
-      ...IdentityAutoFillConstants.LastnameFieldNames,
-      ...IdentityAutoFillConstants.AddressFieldNames,
-      ...IdentityAutoFillConstants.Address1FieldNames,
-      ...IdentityAutoFillConstants.Address2FieldNames,
-      ...IdentityAutoFillConstants.Address3FieldNames,
-      ...IdentityAutoFillConstants.PostalCodeFieldNames,
-      ...IdentityAutoFillConstants.CityFieldNames,
-      ...IdentityAutoFillConstants.StateFieldNames,
-      ...IdentityAutoFillConstants.CountryFieldNames,
-      ...IdentityAutoFillConstants.CompanyFieldNames,
-      ...IdentityAutoFillConstants.PhoneFieldNames,
-      ...IdentityAutoFillConstants.EmailFieldNames,
-      ...IdentityAutoFillConstants.UserNameFieldNames,
-    ]),
-  ];
+  private totpFieldAutocompleteValue = "one-time-code";
   private inlineMenuFieldQualificationFlagSet = false;
+  private inlineMenuTotpFeatureFlag = false;
+  private premiumEnabled = false;
 
   constructor() {
-    void sendExtensionMessage("getInlineMenuFieldQualificationFeatureFlag").then(
-      (getInlineMenuFieldQualificationFlag) =>
-        (this.inlineMenuFieldQualificationFlagSet = !!getInlineMenuFieldQualificationFlag?.result),
-    );
+    void Promise.all([
+      sendExtensionMessage("getInlineMenuFieldQualificationFeatureFlag"),
+      sendExtensionMessage("getInlineMenuTotpFeatureFlag"),
+      sendExtensionMessage("getUserPremiumStatus"),
+    ]).then(([fieldQualificationFlag, totpFeatureFlag, premiumStatus]) => {
+      this.inlineMenuFieldQualificationFlagSet = !!fieldQualificationFlag?.result;
+      this.inlineMenuTotpFeatureFlag = !!totpFeatureFlag?.result;
+      this.premiumEnabled = !!premiumStatus?.result;
+    });
   }
 
   /**
@@ -159,6 +175,18 @@ export class InlineMenuFieldQualificationService
   isFieldForLoginForm(field: AutofillField, pageDetails: AutofillPageDetails): boolean {
     if (!this.inlineMenuFieldQualificationFlagSet) {
       return this.isFieldForLoginFormFallback(field);
+    }
+
+    /**
+     * Totp inline menu is available only for premium users.
+     */
+    if (this.inlineMenuTotpFeatureFlag && this.premiumEnabled) {
+      const isTotpField = this.isTotpField(field);
+      // Autofill does not fill totp inputs with a "password" `type` attribute value
+      const passwordType = field.type === "password";
+      if (isTotpField && !passwordType) {
+        return true;
+      }
     }
 
     const isCurrentPasswordField = this.isCurrentPasswordField(field);
@@ -185,12 +213,6 @@ export class InlineMenuFieldQualificationService
     // for credit card fields, we should assume that the field is part of a credit card form.
     if (this.fieldContainsAutocompleteValues(field, this.creditCardAutocompleteValues)) {
       return true;
-    }
-
-    // If the field contains any keywords indicating this is for a "new" or "changed" credit card
-    // field, we should assume that the field is not going to be autofilled.
-    if (this.keywordsFoundInFieldData(field, [...this.newFieldKeywords])) {
-      return false;
     }
 
     const parentForm = pageDetails.forms[field.form];
@@ -240,7 +262,10 @@ export class InlineMenuFieldQualificationService
    * @param pageDetails - The details of the page that the field is on.
    */
   isFieldForAccountCreationForm(field: AutofillField, pageDetails: AutofillPageDetails): boolean {
-    if (this.isExcludedFieldType(field, this.excludedAutofillFieldTypesSet)) {
+    if (
+      this.isExcludedFieldType(field, this.excludedAutofillFieldTypesSet) ||
+      this.isTotpField(field)
+    ) {
       return false;
     }
 
@@ -284,14 +309,7 @@ export class InlineMenuFieldQualificationService
       return false;
     }
 
-    if (this.fieldContainsAutocompleteValues(field, this.identityAutocompleteValues)) {
-      return true;
-    }
-
-    return (
-      !this.fieldContainsAutocompleteValues(field, this.autocompleteDisabledValues) &&
-      this.keywordsFoundInFieldData(field, this.identityFieldKeywords, false)
-    );
+    return this.fieldContainsAutocompleteValues(field, this.identityAutocompleteValues);
   }
 
   /**
@@ -304,10 +322,22 @@ export class InlineMenuFieldQualificationService
     field: AutofillField,
     pageDetails: AutofillPageDetails,
   ): boolean {
+    const parentForm = pageDetails.forms[field.form];
+
     // If the provided field is set with an autocomplete value of "current-password", we should assume that
     // the page developer intends for this field to be interpreted as a password field for a login form.
     if (this.fieldContainsAutocompleteValues(field, this.currentPasswordAutocompleteValue)) {
-      return true;
+      if (!parentForm) {
+        return (
+          pageDetails.fields.filter(this.isNewPasswordField).filter((f) => f.viewable).length === 0
+        );
+      }
+
+      return (
+        pageDetails.fields
+          .filter(this.isNewPasswordField)
+          .filter((f) => f.viewable && f.form === field.form).length === 0
+      );
     }
 
     const usernameFieldsInPageDetails = pageDetails.fields.filter(this.isUsernameField);
@@ -321,7 +351,6 @@ export class InlineMenuFieldQualificationService
 
     // If the field is not structured within a form, we need to identify if the field is present on
     // a page with multiple password fields. If that isn't the case, we can assume this is a login form field.
-    const parentForm = pageDetails.forms[field.form];
     if (!parentForm) {
       // If no parent form is found, and multiple password fields are present, we should assume that
       // the passed field belongs to a user account creation form.
@@ -378,13 +407,15 @@ export class InlineMenuFieldQualificationService
     // If the provided field is set with an autocomplete of "username", we should assume that
     // the page developer intends for this field to be interpreted as a username field.
     if (this.fieldContainsAutocompleteValues(field, this.loginUsernameAutocompleteValues)) {
-      const newPasswordFieldsInPageDetails = pageDetails.fields.filter(this.isNewPasswordField);
+      const newPasswordFieldsInPageDetails = pageDetails.fields.filter(
+        (field) => field.viewable && this.isNewPasswordField(field),
+      );
       return newPasswordFieldsInPageDetails.length === 0;
     }
 
     // If any keywords in the field's data indicates that this is a field for a "new" or "changed"
     // username, we should assume that this field is not for a login form.
-    if (this.keywordsFoundInFieldData(field, [...this.newFieldKeywords])) {
+    if (this.keywordsFoundInFieldData(field, this.accountCreationFieldKeywords)) {
       return false;
     }
 
@@ -432,12 +463,18 @@ export class InlineMenuFieldQualificationService
         return false;
       }
 
-      // If the form that contains the field has more than one visible field, we should assume
-      // that the field is part of an account creation form.
+      // If the form that contains a single field, we should assume that it is part
+      // of a multistep login form.
       const fieldsWithinForm = pageDetails.fields.filter(
-        (pageDetailsField) => pageDetailsField.form === field.form && pageDetailsField.viewable,
+        (pageDetailsField) => pageDetailsField.form === field.form,
       );
-      return fieldsWithinForm.length === 1;
+      if (fieldsWithinForm.length === 1) {
+        return true;
+      }
+
+      // If multiple fields exist within the form, we should check if a single visible field exists.
+      // If so, we should assume that the field is part of a login form.
+      return fieldsWithinForm.filter((field) => field.viewable).length === 1;
     }
 
     // If a single password field exists within the page details, and that password field is part of
@@ -453,6 +490,11 @@ export class InlineMenuFieldQualificationService
     // provided field is part of an account creation form.
     if (visiblePasswordFieldsInPageDetails.length > 1) {
       return false;
+    }
+
+    // If we have a single password field we should assume that the field is part of a login form.
+    if (passwordFieldsInPageDetails.length === 1) {
+      return true;
     }
 
     // If no visible password fields are found, this field might be part of a multipart form.
@@ -824,7 +866,8 @@ export class InlineMenuFieldQualificationService
   isUsernameField = (field: AutofillField): boolean => {
     if (
       !this.usernameFieldTypes.has(field.type) ||
-      this.isExcludedFieldType(field, this.excludedAutofillFieldTypesSet)
+      this.isExcludedFieldType(field, this.excludedAutofillFieldTypesSet) ||
+      this.fieldHasDisqualifyingAttributeValue(field)
     ) {
       return false;
     }
@@ -853,7 +896,7 @@ export class InlineMenuFieldQualificationService
    *
    * @param field - The field to validate
    */
-  private isCurrentPasswordField = (field: AutofillField): boolean => {
+  isCurrentPasswordField = (field: AutofillField): boolean => {
     if (
       this.fieldContainsAutocompleteValues(field, this.newPasswordAutoCompleteValue) ||
       this.keywordsFoundInFieldData(field, this.accountCreationFieldKeywords)
@@ -862,6 +905,22 @@ export class InlineMenuFieldQualificationService
     }
 
     return this.isPasswordField(field);
+  };
+
+  /**
+   * Validates the provided field as a current password field for an update password form.
+   *
+   * @param field - The field to validate
+   */
+  isUpdateCurrentPasswordField = (field: AutofillField): boolean => {
+    if (this.fieldContainsAutocompleteValues(field, this.newPasswordAutoCompleteValue)) {
+      return false;
+    }
+
+    return (
+      this.isPasswordField(field) &&
+      this.keywordsFoundInFieldData(field, this.updatePasswordFieldKeywords)
+    );
   };
 
   /**
@@ -890,7 +949,8 @@ export class InlineMenuFieldQualificationService
     if (
       (!isInputPasswordType &&
         this.isExcludedFieldType(field, this.excludedAutofillFieldTypesSet)) ||
-      this.fieldHasDisqualifyingAttributeValue(field)
+      this.fieldHasDisqualifyingAttributeValue(field) ||
+      this.isTotpField(field)
     ) {
       return false;
     }
@@ -935,8 +995,24 @@ export class InlineMenuFieldQualificationService
       return false;
     }
 
-    return !(this.passwordFieldExcludeListString.indexOf(cleanedValue) > -1);
+    return !AutoFillConstants.PasswordFieldExcludeList.some((i) => cleanedValue.indexOf(i) > -1);
   }
+
+  /**
+   * Validates whether the provided field is a TOTP field.
+   *
+   * @param field - The field to validate
+   */
+  isTotpField = (field: AutofillField): boolean => {
+    if (this.fieldContainsAutocompleteValues(field, this.totpFieldAutocompleteValue)) {
+      return true;
+    }
+
+    return (
+      !this.isExcludedFieldType(field, this.excludedAutofillFieldTypesSet) &&
+      this.keywordsFoundInFieldData(field, AutoFillConstants.TotpFieldNames)
+    );
+  };
 
   /**
    * Validates the provided field to indicate if the field has a
@@ -1003,6 +1079,40 @@ export class InlineMenuFieldQualificationService
   }
 
   /**
+   * Validates the provided field to indicate if the field is a submit button for a login form.
+   *
+   * @param element - The element to validate
+   */
+  isElementLoginSubmitButton = (element: HTMLElement): boolean => {
+    const keywordValues = this.getSubmitButtonKeywords(element);
+    return SubmitLoginButtonNames.some((keyword) => keywordValues.indexOf(keyword) > -1);
+  };
+
+  /**
+   * Validates the provided field to indicate if the field is a submit button for a change password form.
+   *
+   * @param element - The element to validate
+   */
+  isElementChangePasswordSubmitButton = (element: HTMLElement): boolean => {
+    const keywordValues = this.getSubmitButtonKeywords(element);
+    return SubmitChangePasswordButtonNames.some((keyword) => keywordValues.indexOf(keyword) > -1);
+  };
+
+  /**
+   * Gather the keywords from the provided element to validate the submit button.
+   *
+   * @param element - The element to validate
+   */
+  private getSubmitButtonKeywords(element: HTMLElement): string {
+    if (!this.submitButtonKeywordsMap.has(element)) {
+      const keywordsSet = getSubmitButtonKeywordsSet(element);
+      this.submitButtonKeywordsMap.set(element, Array.from(keywordsSet).join(","));
+    }
+
+    return this.submitButtonKeywordsMap.get(element);
+  }
+
+  /**
    * Validates the provided field to indicate if the field has any of the provided keywords.
    *
    * @param autofillFieldData - The field data to search for keywords
@@ -1043,6 +1153,7 @@ export class InlineMenuFieldQualificationService
         autofillFieldData.title,
         autofillFieldData.placeholder,
         autofillFieldData.autoCompleteType,
+        autofillFieldData.dataSetValues,
         autofillFieldData["label-data"],
         autofillFieldData["label-aria"],
         autofillFieldData["label-left"],
@@ -1052,13 +1163,29 @@ export class InlineMenuFieldQualificationService
       ];
       const keywordsSet = new Set<string>();
       for (let i = 0; i < keywords.length; i++) {
-        if (typeof keywords[i] === "string") {
-          keywords[i]
-            .toLowerCase()
-            .replace(/-/g, "")
-            .replace(/[^a-zA-Z0-9]+/g, "|")
-            .split("|")
-            .forEach((keyword) => keywordsSet.add(keyword));
+        if (keywords[i] && typeof keywords[i] === "string") {
+          let keywordEl = keywords[i].toLowerCase();
+          keywordsSet.add(keywordEl);
+
+          // Remove hyphens from all potential keywords, we want to treat these as a single word.
+          keywordEl = keywordEl.replace(/-/g, "");
+
+          // Split the keyword by non-alphanumeric characters to get the keywords without treating a space as a separator.
+          keywordEl.split(/[^\p{L}\d]+/gu).forEach((keyword: string) => {
+            if (keyword) {
+              keywordsSet.add(keyword);
+            }
+          });
+
+          // Collapse all spaces and split by non-alphanumeric characters to get the keywords
+          keywordEl
+            .replace(/\s/g, "")
+            .split(/[^\p{L}\d]+/gu)
+            .forEach((keyword: string) => {
+              if (keyword) {
+                keywordsSet.add(keyword);
+              }
+            });
         }
       }
 

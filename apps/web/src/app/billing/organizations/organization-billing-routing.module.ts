@@ -6,11 +6,11 @@ import { canAccessBillingTab } from "@bitwarden/common/admin-console/abstraction
 import { organizationPermissionsGuard } from "../../admin-console/organizations/guards/org-permissions.guard";
 import { organizationIsUnmanaged } from "../../billing/guards/organization-is-unmanaged.guard";
 import { WebPlatformUtilsService } from "../../core/web-platform-utils.service";
-import { PaymentMethodComponent } from "../shared";
 
 import { OrgBillingHistoryViewComponent } from "./organization-billing-history-view.component";
 import { OrganizationSubscriptionCloudComponent } from "./organization-subscription-cloud.component";
 import { OrganizationSubscriptionSelfhostComponent } from "./organization-subscription-selfhost.component";
+import { OrganizationPaymentMethodComponent } from "./payment-method/organization-payment-method.component";
 
 const routes: Routes = [
   {
@@ -27,7 +27,7 @@ const routes: Routes = [
       },
       {
         path: "payment-method",
-        component: PaymentMethodComponent,
+        component: OrganizationPaymentMethodComponent,
         canActivate: [
           organizationPermissionsGuard((org) => org.canEditPaymentMethods),
           organizationIsUnmanaged,

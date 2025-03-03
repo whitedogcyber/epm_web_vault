@@ -1,3 +1,5 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import { Component, EventEmitter, Input, OnInit, Output, ViewChild } from "@angular/core";
 import { FormBuilder, Validators } from "@angular/forms";
 
@@ -13,10 +15,10 @@ import { PaymentMethodType, PlanType, ProductTierType } from "@bitwarden/common/
 import { PlanResponse } from "@bitwarden/common/billing/models/response/plan.response";
 import { I18nService } from "@bitwarden/common/platform/abstractions/i18n.service";
 import { MessagingService } from "@bitwarden/common/platform/abstractions/messaging.service";
-import { PlatformUtilsService } from "@bitwarden/common/platform/abstractions/platform-utils.service";
 import { ToastService } from "@bitwarden/components";
 
-import { BillingSharedModule, PaymentComponent, TaxInfoComponent } from "../../shared";
+import { BillingSharedModule, TaxInfoComponent } from "../../shared";
+import { PaymentComponent } from "../../shared/payment/payment.component";
 
 export type TrialOrganizationType = Exclude<ProductTierType, ProductTierType.Free>;
 
@@ -75,7 +77,6 @@ export class TrialBillingStepComponent implements OnInit {
     private formBuilder: FormBuilder,
     private messagingService: MessagingService,
     private organizationBillingService: OrganizationBillingService,
-    private platformUtilsService: PlatformUtilsService,
     private toastService: ToastService,
   ) {}
 
@@ -114,13 +115,12 @@ export class TrialBillingStepComponent implements OnInit {
   }
 
   protected changedCountry() {
-    this.paymentComponent.hideBank = this.taxInfoComponent.taxFormGroup.value.country !== "US";
+    this.paymentComponent.showBankAccount = this.taxInfoComponent.country === "US";
     if (
-      this.paymentComponent.hideBank &&
-      this.paymentComponent.method === PaymentMethodType.BankAccount
+      !this.paymentComponent.showBankAccount &&
+      this.paymentComponent.selected === PaymentMethodType.BankAccount
     ) {
-      this.paymentComponent.method = PaymentMethodType.Card;
-      this.paymentComponent.changeMethod();
+      this.paymentComponent.select(PaymentMethodType.Card);
     }
   }
 
@@ -141,7 +141,9 @@ export class TrialBillingStepComponent implements OnInit {
 
   private async createOrganization(): Promise<string> {
     const planResponse = this.findPlanFor(this.formGroup.value.cadence);
-    const paymentMethod = await this.paymentComponent.createPaymentToken();
+
+    const { type, token } = await this.paymentComponent.tokenize();
+    const paymentMethod: [string, PaymentMethodType] = [token, type];
 
     const organization: OrganizationInformation = {
       name: this.organizationInfo.name,

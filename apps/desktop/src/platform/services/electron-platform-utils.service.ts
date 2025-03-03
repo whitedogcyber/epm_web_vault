@@ -1,3 +1,5 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import { ClientType, DeviceType } from "@bitwarden/common/enums";
 import { I18nService } from "@bitwarden/common/platform/abstractions/i18n.service";
 import { MessagingService } from "@bitwarden/common/platform/abstractions/messaging.service";
@@ -129,30 +131,6 @@ export class ElectronPlatformUtilsService implements PlatformUtilsService {
 
   readFromClipboard(): Promise<string> {
     return ipc.platform.clipboard.read();
-  }
-
-  async supportsBiometric(): Promise<boolean> {
-    return await ipc.platform.biometric.osSupported();
-  }
-
-  async biometricsNeedsSetup(): Promise<boolean> {
-    return await ipc.platform.biometric.biometricsNeedsSetup();
-  }
-
-  async biometricsSupportsAutoSetup(): Promise<boolean> {
-    return await ipc.platform.biometric.biometricsCanAutoSetup();
-  }
-
-  async biometricsSetup(): Promise<void> {
-    return await ipc.platform.biometric.biometricsSetup();
-  }
-
-  /** This method is used to authenticate the user presence _only_.
-   * It should not be used in the process to retrieve
-   * biometric keys, which has a separate authentication mechanism.
-   * For biometric keys, invoke "keytar" with a biometric key suffix */
-  async authenticateBiometric(): Promise<boolean> {
-    return await ipc.platform.biometric.authenticate();
   }
 
   supportsSecureStorage(): boolean {

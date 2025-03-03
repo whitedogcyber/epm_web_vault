@@ -1,13 +1,28 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import { EFFLongWordList } from "@bitwarden/common/platform/misc/wordlist";
+
+import {
+  CredentialGenerator,
+  GenerateRequest,
+  GeneratedCredential,
+  PassphraseGenerationOptions,
+  PasswordGenerationOptions,
+} from "../types";
+import { optionsToEffWordListRequest, optionsToRandomAsciiRequest } from "../util";
 
 import { Randomizer } from "./abstractions";
 import { Ascii } from "./data";
 import { CharacterSet, EffWordListRequest, RandomAsciiRequest } from "./types";
 
 /** Generation algorithms that produce randomized secrets */
-export class PasswordRandomizer {
+export class PasswordRandomizer
+  implements
+    CredentialGenerator<PassphraseGenerationOptions>,
+    CredentialGenerator<PasswordGenerationOptions>
+{
   /** Instantiates the password randomizer
-   *  @param random data source for random data
+   *  @param randomizer data source for random data
    */
   constructor(private randomizer: Randomizer) {}
 
@@ -52,6 +67,53 @@ export class PasswordRandomizer {
 
     return wordList.join(request.separator);
   }
+
+  generate(
+    request: GenerateRequest,
+    settings: PasswordGenerationOptions,
+  ): Promise<GeneratedCredential>;
+  generate(
+    request: GenerateRequest,
+    settings: PassphraseGenerationOptions,
+  ): Promise<GeneratedCredential>;
+  async generate(
+    request: GenerateRequest,
+    settings: PasswordGenerationOptions | PassphraseGenerationOptions,
+  ) {
+    if (isPasswordGenerationOptions(settings)) {
+      const req = optionsToRandomAsciiRequest(settings);
+      const password = await this.randomAscii(req);
+
+      return new GeneratedCredential(
+        password,
+        "password",
+        Date.now(),
+        request.source,
+        request.website,
+      );
+    } else if (isPassphraseGenerationOptions(settings)) {
+      const req = optionsToEffWordListRequest(settings);
+      const passphrase = await this.randomEffLongWords(req);
+
+      return new GeneratedCredential(
+        passphrase,
+        "passphrase",
+        Date.now(),
+        request.source,
+        request.website,
+      );
+    }
+
+    throw new Error("Invalid settings received by generator.");
+  }
+}
+
+function isPasswordGenerationOptions(settings: any): settings is PasswordGenerationOptions {
+  return "length" in (settings ?? {});
+}
+
+function isPassphraseGenerationOptions(settings: any): settings is PassphraseGenerationOptions {
+  return "numWords" in (settings ?? {});
 }
 
 // given a generator request, convert each of its `number | undefined` properties

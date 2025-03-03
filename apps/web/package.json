@@ -1,8 +1,8 @@
 {
   "name": "@bitwarden/web-vault",
-  "version": "2024.8.3",
+  "version": "2025.1.2",
   "scripts": {
-    "build:oss": "webpack",
+    "build:oss": "cross-env NODE_OPTIONS=\"--max-old-space-size=8192\" webpack",
     "build:oss:watch": "webpack serve",
     "build:bit:dev": "cross-env ENV=development npm run build:bit",
     "build:bit:dev:watch": "cross-env ENV=development NODE_OPTIONS=\"--max-old-space-size=8192\" npm run build:bit:watch",

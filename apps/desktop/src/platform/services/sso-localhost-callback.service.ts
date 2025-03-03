@@ -1,3 +1,5 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import * as http from "http";
 
 import { ipcMain } from "electron";
@@ -18,10 +20,10 @@ export class SSOLocalhostCallbackService {
     private messagingService: MessageSender,
   ) {
     ipcMain.handle("openSsoPrompt", async (event, { codeChallenge, state }) => {
-      const { ssoCode } = await this.openSsoPrompt(codeChallenge, state);
+      const { ssoCode, recvState } = await this.openSsoPrompt(codeChallenge, state);
       this.messagingService.send("ssoCallback", {
         code: ssoCode,
-        state: state,
+        state: recvState,
         redirectUri: this.ssoRedirectUri,
       });
     });
@@ -30,24 +32,20 @@ export class SSOLocalhostCallbackService {
   private async openSsoPrompt(
     codeChallenge: string,
     state: string,
-  ): Promise<{ ssoCode: string; orgIdentifier: string }> {
+  ): Promise<{ ssoCode: string; recvState: string }> {
     const env = await firstValueFrom(this.environmentService.environment$);
 
     return new Promise((resolve, reject) => {
       const callbackServer = http.createServer((req, res) => {
-        // after 5 minutes, close the server
-        setTimeout(
-          () => {
-            callbackServer.close(() => reject());
-          },
-          5 * 60 * 1000,
-        );
-
         const urlString = "http://localhost" + req.url;
         const url = new URL(urlString);
         const code = url.searchParams.get("code");
+        if (code == null) {
+          res.writeHead(404);
+          res.end("not found");
+          return;
+        }
         const receivedState = url.searchParams.get("state");
-        const orgIdentifier = this.getOrgIdentifierFromState(receivedState);
         res.setHeader("Content-Type", "text/html");
         if (code != null && receivedState != null && this.checkState(receivedState, state)) {
           res.writeHead(200);
@@ -60,7 +58,7 @@ export class SSOLocalhostCallbackService {
           callbackServer.close(() =>
             resolve({
               ssoCode: code,
-              orgIdentifier: orgIdentifier,
+              recvState: receivedState,
             }),
           );
         } else {
@@ -74,6 +72,7 @@ export class SSOLocalhostCallbackService {
           callbackServer.close(() => reject());
         }
       });
+
       let foundPort = false;
       const webUrl = env.getWebVaultUrl();
       for (let port = 8065; port <= 8070; port++) {
@@ -102,6 +101,14 @@ export class SSOLocalhostCallbackService {
       if (!foundPort) {
         reject();
       }
+
+      // after 5 minutes, close the server
+      setTimeout(
+        () => {
+          callbackServer.close(() => reject());
+        },
+        5 * 60 * 1000,
+      );
     });
   }
 

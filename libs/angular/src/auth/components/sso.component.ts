@@ -1,3 +1,5 @@
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
 import { Directive, OnInit } from "@angular/core";
 import { ActivatedRoute, NavigationExtras, Router } from "@angular/router";
 import { firstValueFrom } from "rxjs";
@@ -17,7 +19,6 @@ import { SsoLoginServiceAbstraction } from "@bitwarden/common/auth/abstractions/
 import { AuthResult } from "@bitwarden/common/auth/models/domain/auth-result";
 import { ForceSetPasswordReason } from "@bitwarden/common/auth/models/domain/force-set-password-reason";
 import { SsoPreValidateResponse } from "@bitwarden/common/auth/models/response/sso-pre-validate.response";
-import { FeatureFlag } from "@bitwarden/common/enums/feature-flag.enum";
 import { ConfigService } from "@bitwarden/common/platform/abstractions/config/config.service";
 import { CryptoFunctionService } from "@bitwarden/common/platform/abstractions/crypto-function.service";
 import { EnvironmentService } from "@bitwarden/common/platform/abstractions/environment.service";
@@ -26,7 +27,10 @@ import { LogService } from "@bitwarden/common/platform/abstractions/log.service"
 import { PlatformUtilsService } from "@bitwarden/common/platform/abstractions/platform-utils.service";
 import { StateService } from "@bitwarden/common/platform/abstractions/state.service";
 import { Utils } from "@bitwarden/common/platform/misc/utils";
+import { ToastService } from "@bitwarden/components";
 import { PasswordGenerationServiceAbstraction } from "@bitwarden/generator-legacy";
+
+import { defaultRoutes } from "../guards/redirect.guard";
 
 @Directive()
 export class SsoComponent implements OnInit {
@@ -47,7 +51,7 @@ export class SsoComponent implements OnInit {
   protected twoFactorRoute = "2fa";
   protected successRoute = "lock";
   protected trustedDeviceEncRoute = "login-initiated";
-  protected changePasswordRoute = "set-password";
+  protected changePasswordRoute = "set-password-jit";
   protected forcePasswordResetRoute = "update-temp-password";
   protected clientId: string;
   protected redirectUri: string;
@@ -71,6 +75,7 @@ export class SsoComponent implements OnInit {
     protected configService: ConfigService,
     protected masterPasswordService: InternalMasterPasswordServiceAbstraction,
     protected accountService: AccountService,
+    protected toastService: ToastService,
   ) {}
 
   async ngOnInit() {
@@ -111,11 +116,11 @@ export class SsoComponent implements OnInit {
 
   async submit(returnUri?: string, includeUserIdentifier?: boolean) {
     if (this.identifier == null || this.identifier === "") {
-      this.platformUtilsService.showToast(
-        "error",
-        this.i18nService.t("ssoValidationFailed"),
-        this.i18nService.t("ssoIdentifierRequired"),
-      );
+      this.toastService.showToast({
+        variant: "error",
+        title: this.i18nService.t("ssoValidationFailed"),
+        message: this.i18nService.t("ssoIdentifierRequired"),
+      });
       return;
     }
 
@@ -335,14 +340,6 @@ export class SsoComponent implements OnInit {
   }
 
   private async handleChangePasswordRequired(orgIdentifier: string) {
-    const emailVerification = await this.configService.getFeatureFlag(
-      FeatureFlag.EmailVerification,
-    );
-
-    if (emailVerification) {
-      this.changePasswordRoute = "set-password-jit";
-    }
-
     await this.navigateViaCallbackOrRoute(
       this.onSuccessfulLoginChangePasswordNavigate,
       [this.changePasswordRoute],
@@ -382,16 +379,20 @@ export class SsoComponent implements OnInit {
 
     // TODO: Key Connector Service should pass this error message to the logout callback instead of displaying here
     if (e.message === "Key Connector error") {
-      this.platformUtilsService.showToast(
-        "error",
-        null,
-        this.i18nService.t("ssoKeyConnectorError"),
-      );
+      this.toastService.showToast({
+        variant: "error",
+        title: null,
+        message: this.i18nService.t("ssoKeyConnectorError"),
+      });
     } else {
-      this.platformUtilsService.showToast("error", null, e.message);
+      this.toastService.showToast({
+        variant: "error",
+        title: null,
+        message: e.message,
+      });
     }
     this.router.routeReuseStrategy.shouldReuseRoute = () => false;
-    await this.router.navigate(["/sso"]);
+    await this.router.navigate([defaultRoutes.loggedOut]);
   }
 
   private async navigateViaCallbackOrRoute(

@@ -1,4 +1,7 @@
-import { Directive, Inject, OnDestroy, OnInit } from "@angular/core";
+// FIXME: Update this file to be type safe and remove this and next line
+// @ts-strict-ignore
+import { Directive, Inject, OnInit, OnDestroy } from "@angular/core";
+import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { ActivatedRoute, NavigationExtras, Router } from "@angular/router";
 import { firstValueFrom } from "rxjs";
 import { first } from "rxjs/operators";
@@ -68,6 +71,7 @@ export class TwoFactorComponent extends CaptchaProtectedComponent implements OnI
   protected changePasswordRoute = "set-password";
   protected forcePasswordResetRoute = "update-temp-password";
   protected successRoute = "vault";
+  protected twoFactorTimeoutRoute = "authentication-timeout";
 
   get isDuoProvider(): boolean {
     return (
@@ -97,8 +101,23 @@ export class TwoFactorComponent extends CaptchaProtectedComponent implements OnI
     protected accountService: AccountService,
     protected toastService: ToastService,
   ) {
-    super(environmentService, i18nService, platformUtilsService);
+    super(environmentService, i18nService, platformUtilsService, toastService);
     this.webAuthnSupported = this.platformUtilsService.supportsWebAuthn(win);
+
+    // Add subscription to authenticationSessionTimeout$ and navigate to twoFactorTimeoutRoute if expired
+    this.loginStrategyService.authenticationSessionTimeout$
+      .pipe(takeUntilDestroyed())
+      .subscribe(async (expired) => {
+        if (!expired) {
+          return;
+        }
+
+        try {
+          await this.router.navigate([this.twoFactorTimeoutRoute]);
+        } catch (err) {
+          this.logService.error(`Failed to navigate to ${this.twoFactorTimeoutRoute} route`, err);
+        }
+      });
   }
 
   async ngOnInit() {
@@ -135,7 +154,11 @@ export class TwoFactorComponent extends CaptchaProtectedComponent implements OnI
           this.submit();
         },
         (error: string) => {
-          this.platformUtilsService.showToast("error", this.i18nService.t("errorOccurred"), error);
+          this.toastService.showToast({
+            variant: "error",
+            title: this.i18nService.t("errorOccurred"),
+            message: this.i18nService.t("webauthnCancelOrTimeout"),
+          });
         },
         (info: string) => {
           if (info === "ready") {
@@ -201,11 +224,11 @@ export class TwoFactorComponent extends CaptchaProtectedComponent implements OnI
     await this.setupCaptcha();
 
     if (this.token == null || this.token === "") {
-      this.platformUtilsService.showToast(
-        "error",
-        this.i18nService.t("errorOccurred"),
-        this.i18nService.t("verificationCodeRequired"),
-      );
+      this.toastService.showToast({
+        variant: "error",
+        title: this.i18nService.t("errorOccurred"),
+        message: this.i18nService.t("verificationCodeRequired"),
+      });
       return;
     }
 
@@ -243,11 +266,11 @@ export class TwoFactorComponent extends CaptchaProtectedComponent implements OnI
       return false;
     }
 
-    this.platformUtilsService.showToast(
-      "error",
-      this.i18nService.t("errorOccured"),
-      this.i18nService.t("encryptionKeyMigrationRequired"),
-    );
+    this.toastService.showToast({
+      variant: "error",
+      title: this.i18nService.t("errorOccured"),
+      message: this.i18nService.t("encryptionKeyMigrationRequired"),
+    });
     return true;
   }
 
@@ -414,11 +437,11 @@ export class TwoFactorComponent extends CaptchaProtectedComponent implements OnI
     }
 
     if ((await this.loginStrategyService.getEmail()) == null) {
-      this.platformUtilsService.showToast(
-        "error",
-        this.i18nService.t("errorOccurred"),
-        this.i18nService.t("sessionTimeout"),
-      );
+      this.toastService.showToast({
+        variant: "error",
+        title: this.i18nService.t("errorOccurred"),
+        message: this.i18nService.t("sessionTimeout"),
+      });
       return;
     }
 
@@ -434,11 +457,11 @@ export class TwoFactorComponent extends CaptchaProtectedComponent implements OnI
       this.emailPromise = this.apiService.postTwoFactorEmail(request);
       await this.emailPromise;
       if (doToast) {
-        this.platformUtilsService.showToast(
-          "success",
-          null,
-          this.i18nService.t("verificationCodeEmailSent", this.twoFactorEmail),
-        );
+        this.toastService.showToast({
+          variant: "success",
+          title: null,
+          message: this.i18nService.t("verificationCodeEmailSent", this.twoFactorEmail),
+        });
       }
     } catch (e) {
       this.logService.error(e);
